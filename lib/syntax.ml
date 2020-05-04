@@ -1,8 +1,3 @@
-(* non-empty list *)
-type 'a nlist =
-  | Head of 'a
-  | Tail of 'a * 'a nlist
-
 type binop =
   | Add
   | Minus
@@ -19,18 +14,22 @@ type variable = string
  * n     ∈ Numebrs
  * x     ∈ Variables
  * v    := n
+ *       | x
  *       | function(x* ) { stmt+ }
+ *       | ()
  *)
 type value =
   | Num of number
-  | Fun of variable list * stmt nlist
+  | Var of variable
+  | Fun of variable list * stmt Nlist.t
   | Builtin of builtin
+  | Unit
 
 (**
  * exp  := v
  *       | exp op exp
  *       | exp(exp* )
- *       | PRomise.create(exp)
+ *       | Promise.create(exp)
  *)
 and exp =
   | Value of value
@@ -39,7 +38,7 @@ and exp =
   | Promise of promise
 and promise =
   | Constructor of exp
-  | All of exp nlist
+  | All of exp Nlist.t
   | Wait of exp
 
 (**
@@ -49,7 +48,7 @@ and promise =
  *)
 and stmt =
   |  Expression of exp
-  (* Def(x, e) === const x = e; *)
   | Def of variable * exp
   | Return of exp
 
+type stmts = stmt Nlist.t
