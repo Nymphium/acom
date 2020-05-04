@@ -17,10 +17,11 @@ let lookup x env =
 let bind_args xs vs =
   let xl, vl = List.(length xs, length vs) in
   List.combine xs @@
-  if xl > vl then
-    Array.(make (xl - vl) Null |> to_list) @ vs
-  else
-    vs
+    if xl > vl then
+       Array.(make (xl - vl) Null |> to_list) @ vs
+    else if xl < vl then
+        Base.List.take vs xl
+      else vs
 
 let builtin bin vs =
   match bin with
@@ -98,7 +99,7 @@ let%test _ =
 
 let%test _ =
   let stmts = Nlist.from_list [ 
-     Expression(Call(Call(Value(Builtin(SetTimeout)), [Value(Num(5000))]), [Value(Fun(["_"], Nlist.from_list [
+     Expression(Call(Call(Value(Builtin(SetTimeout)), [Value(Num(5000))]), [Value(Fun([], Nlist.from_list [
        Expression(Call(Value(Builtin(ConsoleLog)), [Value(Num(100))])) 
      ]))] ))
   ]
