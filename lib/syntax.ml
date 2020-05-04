@@ -38,6 +38,7 @@ and exp =
   | Op of binop * exp * exp
   | Call of exp * exp list
   | Promise of promise
+
 and promise =
   | Constructor of exp
   | All of exp Nlist.t
@@ -49,7 +50,7 @@ and promise =
  *       | return exp
  *)
 and stmt =
-  |  Expression of exp
+  | Expression of exp
   | Def of variable * exp
   | Return of exp
 
