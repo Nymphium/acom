@@ -16,6 +16,7 @@ type variable = string
  * v    := n
  *       | x
  *       | function(x* ) { stmt+ }
+ *       | null
  *       | ()
  *)
 type value =
@@ -23,6 +24,7 @@ type value =
   | Var of variable
   | Fun of variable list * stmt Nlist.t
   | Builtin of builtin
+  | Null
   | Unit
 
 (**

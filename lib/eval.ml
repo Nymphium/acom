@@ -18,7 +18,7 @@ let bind_args xs vs =
   let xl, vl = List.(length xs, length vs) in
   List.combine xs @@
   if xl > vl then
-    Array.(make (xl - vl) Unit |> to_list) @ vs
+    Array.(make (xl - vl) Null |> to_list) @ vs
   else
     vs
 
