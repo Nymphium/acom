@@ -26,16 +26,13 @@ let bind_args xs vs =
 let builtin bin vs =
   match bin with
   | SetTimeout ->
-      let n = coerce_number @@ List.nth vs 0 in
-      let () = Unix.sleepf @@ (float_of_int n) /. 1000. in
-      Fun(["f"], Nlist.from_list [
-        Expression(Call(Value(Var("f")), [Value(Unit)]));
-        Return(Value(Unit))
-      ])
+    let n = coerce_number @@ List.nth vs 0 in
+    let () = Unix.sleepf @@ (float_of_int n) /. 1000. in
+    Fun(["f"], Nlist.from_list [Expression(Call(Value(Var("f")), []))])
   | ConsoleLog ->
-      let n = coerce_number @@ List.nth vs 0 in
-      let () = Printf.printf "%n\n" n in
-      Unit
+    let n = coerce_number @@ List.nth vs 0 in
+    let () = Printf.printf "%n\n" n in
+    Unit
 
 let binop op l r =
   let l = coerce_number l in
