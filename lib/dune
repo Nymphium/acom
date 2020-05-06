@@ -1,5 +1,5 @@
 (library
   (name lib)
   (inline_tests)
-  (libraries unix base)
-  (preprocess (pps ppx_inline_test)))
+  (libraries unix base core.uuid)
+  (preprocess (pps ppx_inline_test ppx_expect ppx_deriving.std)))

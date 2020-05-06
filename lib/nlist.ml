@@ -2,6 +2,7 @@
 type 'a t =
   | End of 'a
   | Last of 'a * 'a t
+[@@deriving eq]
 
 let rec from_list = function
   | [] -> failwith "non empty list is not allowed"

@@ -2,13 +2,15 @@ type binop =
   | Add
   | Minus
   | Mul
+[@@deriving eq]
 
 type builtin =
   | SetTimeout
   | ConsoleLog
+[@@deriving eq]
 
-type number = int
-type variable = string
+type number = int [@@deriving eq]
+type variable = string [@@deriving eq]
 
 (**
  * n     ∈ Numebrs
@@ -22,7 +24,7 @@ type variable = string
 type value =
   | Num of number
   | Var of variable
-  | Fun of variable list * stmt Nlist.t
+  | Fun of variable list * stmts
   | Builtin of builtin
   | Null
   | Unit
@@ -41,7 +43,6 @@ and exp =
 
 and promise =
   | Constructor of exp
-  | All of exp Nlist.t
   | Wait of exp
 
 (**
@@ -54,4 +55,4 @@ and stmt =
   | Def of variable * exp
   | Return of exp
 
-type stmts = stmt Nlist.t
+and stmts = stmt Nlist.t [@@deriving eq]
