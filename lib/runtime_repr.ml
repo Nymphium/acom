@@ -1,4 +1,5 @@
 open Syntax
+open Base
 
 module Uuid : sig
   type t
@@ -27,14 +28,26 @@ and runtime_value =
   | Closure of env * variable list * stmts
 
 exception NotConvertible
+exception NotCoercible
+exception VariableNotFound of variable
+
+let number_of_value = function
+  | Num n -> n
+  | _ -> raise NotCoercible
+;;
+
+let lookup x env =
+  try List.Assoc.find_exn env x ~equal:equal_variable with
+  | Not_found_s _ -> raise @@ VariableNotFound x
+;;
 
 let rtv_of_value env = function
+  | Var x -> lookup x env
   | Null -> RNull
   | Unit -> RUnit
   | Num n -> RNum n
   | Fun (xs, stmts) -> Closure (env, xs, stmts)
   | Builtin b -> RBuiltin b
-  | _ -> raise NotConvertible
 ;;
 
 let value_of_rtv = function

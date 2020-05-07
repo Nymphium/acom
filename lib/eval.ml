@@ -3,18 +3,8 @@ open Runtime_repr
 open Nlist
 open Base
 
-exception NotCoercible
-exception VariableNotFound of variable
-
-let coerce_number = function
-  | Num n -> n
-  | _ -> raise NotCoercible
-;;
-
-let lookup x env =
-  try List.Assoc.find_exn env x ~equal:equal_variable with
-  | Not_found_s _ -> raise @@ VariableNotFound x
-;;
+exception NotCoercible = Runtime_repr.NotCoercible
+exception VariableNotFound = Runtime_repr.VariableNotFound
 
 let bind_args xs vs =
   let xl, vl = List.(length xs, length vs) in
@@ -28,8 +18,8 @@ let bind_args xs vs =
 ;;
 
 let binop op l r =
-  let l = value_of_rtv l |> coerce_number in
-  let r = value_of_rtv r |> coerce_number in
+  let l = value_of_rtv l |> number_of_value in
+  let r = value_of_rtv r |> number_of_value in
   match op with
   | Add -> RNum (l + r)
   | Mul -> RNum (l * r)
@@ -41,7 +31,7 @@ let wait_unit : Float.t = 20. /. 1000.
 let rec builtin bin rtvs =
   match bin with
   | SetTimeout ->
-    let n = List.nth_exn rtvs 0 |> value_of_rtv |> coerce_number in
+    let n = List.nth_exn rtvs 0 |> value_of_rtv |> number_of_value in
     (match List.nth_exn rtvs 1 with
     | Closure (env, _, stmts) ->
       let time = ref @@ (Float.of_int n /. 1000.) in
@@ -67,7 +57,7 @@ let rec builtin bin rtvs =
   | ConsoleLog ->
     List.nth_exn rtvs 0
     |> value_of_rtv
-    |> coerce_number
+    |> number_of_value
     |> Int.to_string
     |> Stdlib.print_endline
     |> Fn.const RUnit
@@ -75,7 +65,6 @@ let rec builtin bin rtvs =
 and eval_exp env exp =
   let () = Thread_pool.run () |> ignore in
   match exp with
-  | Value (Var x) -> lookup x env
   | Value v -> rtv_of_value env v
   | Op (op, e1, e2) ->
     let v1 = eval_exp env e1 in
@@ -87,7 +76,7 @@ and eval_exp env exp =
     (match fn with
     | Closure (env', xs, body) ->
       let env'' = bind_args xs args @ env' in
-      eval_stmts env'' body |> rtv_of_value env''
+      eval_stmts env'' body
     | RBuiltin bin -> builtin bin args
     | _ -> failwith "this is not callable object")
   | Promise p ->
@@ -111,8 +100,8 @@ and eval_stmts env stmts =
     (match stmt with
     | Expression e | Def (_, e) ->
       let () = eval_exp env e |> ignore in
-      Unit
-    | Return e -> eval_exp env e |> value_of_rtv)
+      RUnit
+    | Return e -> eval_exp env e)
   | Last (stmt, tl) ->
     (match stmt with
     | Expression e ->
@@ -121,13 +110,13 @@ and eval_stmts env stmts =
     | Def (x, e) ->
       let env' = (x, eval_exp env e) :: env in
       eval_stmts env' tl
-    | Return e -> eval_exp env e |> value_of_rtv)
+    | Return e -> eval_exp env e)
 ;;
 
 let run_program stmts =
   let ret = eval_stmts [] stmts in
   let () = Thread_pool.run_all () in
-  ret
+  value_of_rtv ret
 ;;
 
 let%test _ =
@@ -153,7 +142,7 @@ let%test "fun" =
                  ( [ "y" ]
                  , Nlist.from_list [ Return (Op (Add, Value (Var "x"), Value (Var "y"))) ]
                  )) )
-      ; Def ("", Value (Num 10))
+      ; Def ("x", Value (Num 10))
       ; Return (Call (Value (Var "f"), [ Value (Num 12) ]))
       ]
   in
