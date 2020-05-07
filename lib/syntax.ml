@@ -2,15 +2,15 @@ type binop =
   | Add
   | Minus
   | Mul
-[@@deriving eq]
+[@@deriving eq, show]
 
 type builtin =
   | SetTimeout
   | ConsoleLog
-[@@deriving eq]
+[@@deriving eq, show]
 
-type number = int [@@deriving eq]
-type variable = string [@@deriving eq]
+type number = int [@@deriving eq, show]
+type variable = string [@@deriving eq, show]
 
 (**
  * n     ∈ Numebrs
@@ -55,4 +55,4 @@ and stmt =
   | Def of variable * exp
   | Return of exp
 
-and stmts = stmt Nlist.t [@@deriving eq]
+and stmts = stmt Nlist.t [@@deriving eq, show]

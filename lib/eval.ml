@@ -28,7 +28,8 @@ let binop op l r =
 
 let wait_unit : Float.t = 20. /. 1000.
 
-let rec builtin bin rtvs =
+let rec builtin : type ans. builtin -> runtime_value list -> (runtime_value, ans) Cont.t =
+ fun bin rtvs ->
   match bin with
   | SetTimeout ->
     let n = List.nth_exn rtvs 0 |> value_of_rtv |> number_of_value in
@@ -44,7 +45,7 @@ let rec builtin bin rtvs =
           let rest = !time -. wait_unit in
           if Float.(rest < 0.)
           then (
-            let () = eval_stmts env stmts |> ignore in
+            let _ = Cont.(run_identity @@ eval_stmts env stmts) in
             Done RUnit)
           else (
             time := rest;
@@ -52,7 +53,7 @@ let rec builtin bin rtvs =
         in
         it
       in
-      RUnit
+      Cont.return RUnit
     | _ -> failwith "second value of setTimeout should be a function")
   | ConsoleLog ->
     List.nth_exn rtvs 0
@@ -61,18 +62,21 @@ let rec builtin bin rtvs =
     |> Int.to_string
     |> Stdlib.print_endline
     |> Fn.const RUnit
+    |> Cont.return
 
-and eval_exp env exp =
+and eval_exp : type ans. env -> exp -> (runtime_value, ans) Cont.t =
+ fun env exp ->
+  let open Cont in
   let () = Thread_pool.run () |> ignore in
   match exp with
-  | Value v -> rtv_of_value env v
+  | Value v -> return @@ rtv_of_value env v
   | Op (op, e1, e2) ->
-    let v1 = eval_exp env e1 in
-    let v2 = eval_exp env e2 in
-    binop op v1 v2
-  | Call (e1, e2) ->
-    let fn = eval_exp env e1 in
-    let args = List.map ~f:(eval_exp env) e2 in
+    let* v1 = eval_exp env e1 in
+    let* v2 = eval_exp env e2 in
+    return @@ binop op v1 v2
+  | Call (e, es) ->
+    let* fn = eval_exp env e in
+    let* args = Cont.List.map ~f:(eval_exp env) es in
     (match fn with
     | Closure (env', xs, body) ->
       let env'' = bind_args xs args @ env' in
@@ -85,38 +89,46 @@ and eval_exp env exp =
       (match exp with
       | Value (Fun (_, _) as fn) ->
         let exp' = Call (Value fn, [ Value Unit ]) in
-        let uuid = Thread_pool.enqueue @@ fun () -> Done (eval_exp env exp') in
-        RPromise uuid
+        let uuid =
+          Thread_pool.enqueue @@ fun () -> run (eval_exp env exp') @@ fun x -> Done x
+        in
+        return @@ RPromise uuid
       | _ -> failwith "this is not callable object")
     | Wait exp ->
-      let rtv = eval_exp env exp in
-      (match rtv with
-      | RPromise uuid -> Thread_pool.wait uuid
-      | _ -> rtv))
+      let* rtv = eval_exp env exp in
+      return
+        (match rtv with
+        | RPromise uuid -> Thread_pool.wait uuid
+        | _ -> rtv))
 
-and eval_stmts env stmts =
+and eval_stmts : type ans. env -> stmts -> (runtime_value, ans) Cont.t =
+ fun env stmts ->
+  let open Cont in
   match stmts with
   | End stmt ->
     (match stmt with
     | Expression e | Def (_, e) ->
-      let () = eval_exp env e |> ignore in
-      RUnit
+      let* _ = eval_exp env e in
+      return RUnit
     | Return e -> eval_exp env e)
   | Last (stmt, tl) ->
     (match stmt with
     | Expression e ->
-      let () = eval_exp env e |> ignore in
+      let* _ = eval_exp env e in
       eval_stmts env tl
     | Def (x, e) ->
-      let env' = (x, eval_exp env e) :: env in
+      let* rtv = eval_exp env e in
+      let env' = (x, rtv) :: env in
       eval_stmts env' tl
     | Return e -> eval_exp env e)
 ;;
 
 let run_program stmts =
-  let ret = eval_stmts [] stmts in
-  let () = Thread_pool.run_all () in
-  value_of_rtv ret
+  let open Cont in
+  Fn.flip run value_of_rtv
+  @@ let* ret = eval_stmts [] stmts in
+     let () = Thread_pool.run_all () in
+     return ret
 ;;
 
 let%test _ =
