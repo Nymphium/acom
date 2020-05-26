@@ -26,32 +26,17 @@ let binop op l r =
   | Minus -> RNum (l - r)
 ;;
 
-let wait_unit : Float.t = 20. /. 1000.
-
-let rec builtin : type ans. builtin -> runtime_value list -> (runtime_value, ans) Cont.t =
+let rec builtin : builtin -> runtime_value list -> (runtime_value, runtime_value) Cont.t =
  fun bin rtvs ->
   match bin with
   | SetTimeout ->
     let n = List.nth_exn rtvs 0 |> value_of_rtv |> number_of_value in
     (match List.nth_exn rtvs 1 with
     | Closure (env, _, stmts) ->
-      let time = ref @@ (Float.of_int n /. 1000.) in
+      let time = Float.(of_int n / 1000.) in
       let () =
-        ignore
-        @@ Thread_pool.enqueue
-        @@
-        let rec it () =
-          let () = Unix.sleepf wait_unit in
-          let rest = !time -. wait_unit in
-          if Float.(rest < 0.)
-          then (
-            let _ = Cont.(run_identity @@ eval_stmts env stmts) in
-            Done RUnit)
-          else (
-            time := rest;
-            Pending it)
-        in
-        it
+        Time_scheduler.register time
+        @@ fun () -> ignore @@ Cont.(run_identity @@ eval_program env stmts)
       in
       Cont.return RUnit
     | _ -> failwith "second value of setTimeout should be a function")
@@ -60,14 +45,14 @@ let rec builtin : type ans. builtin -> runtime_value list -> (runtime_value, ans
     |> value_of_rtv
     |> number_of_value
     |> Int.to_string
-    |> Stdlib.print_endline
+    |> Stdio.print_endline
     |> Fn.const RUnit
     |> Cont.return
 
-and eval_exp : type ans. env -> exp -> (runtime_value, ans) Cont.t =
+and eval_exp : env -> exp -> (runtime_value, runtime_value) Cont.t =
  fun env exp ->
   let open Cont in
-  let () = Thread_pool.run () |> ignore in
+  let () = Time_scheduler.step_clock () in
   match exp with
   | Value v -> return @@ rtv_of_value env v
   | Op (op, e1, e2) ->
@@ -82,26 +67,29 @@ and eval_exp : type ans. env -> exp -> (runtime_value, ans) Cont.t =
       let env'' = bind_args xs args @ env' in
       eval_stmts env'' body
     | RBuiltin bin -> builtin bin args
-    | _ -> failwith "this is not callable object")
-  | Promise p ->
-    (match p with
-    | Constructor exp ->
-      (match exp with
-      | Value (Fun (_, _) as fn) ->
-        let exp' = Call (Value fn, [ Value Unit ]) in
-        let uuid =
-          Thread_pool.enqueue @@ fun () -> run (eval_exp env exp') @@ fun x -> Done x
-        in
-        return @@ RPromise uuid
-      | _ -> failwith "this is not callable object")
-    | Wait exp ->
-      let* rtv = eval_exp env exp in
-      return
-        (match rtv with
-        | RPromise uuid -> Thread_pool.wait uuid
-        | _ -> rtv))
+    | NativeFun fn -> return @@ fn args
+    | e -> failwith @@ "this is not callable object: " ^ (value_of_rtv e |> show_value))
+  | Promise (Constructor exp) ->
+    (match exp with
+    | Value (Fun (args, stmts)) ->
+      let uuid =
+        Thread_pool.register
+        @@ Cont.lift
+        @@ fun resolve ->
+        let env' = Stdlib.List.combine args [ NativeFun resolve ] in
+        Fn.flip run (fun _ -> RUnit) @@ eval_program (env' @ env) stmts
+      in
+      return @@ RPromise uuid
+    | _ -> failwith "this is not syntactically callable object")
+  | Promise (Wait exp) ->
+    let* rtv = eval_exp env exp in
+    (match rtv with
+    | RPromise uuid ->
+      let* rtvs = Thread_pool.await uuid in
+      rtvs |> Base.List.hd |> Option.value ~default:RUnit |> return
+    | _ -> return rtv)
 
-and eval_stmts : type ans. env -> stmts -> (runtime_value, ans) Cont.t =
+and eval_stmts : env -> stmts -> (runtime_value, runtime_value) Cont.t =
  fun env stmts ->
   let open Cont in
   match stmts with
@@ -121,15 +109,16 @@ and eval_stmts : type ans. env -> stmts -> (runtime_value, ans) Cont.t =
       let env' = (x, rtv) :: env in
       eval_stmts env' tl
     | Return e -> eval_exp env e)
+
+and eval_program env stmts =
+  let open Cont in
+  let* rtv = eval_stmts env stmts in
+  let () = Time_scheduler.run_all () in
+  let () = Thread_pool.run_all () in
+  Cont.return rtv
 ;;
 
-let run_program stmts =
-  let open Cont in
-  Fn.flip run value_of_rtv
-  @@ let* ret = eval_stmts [] stmts in
-     let () = Thread_pool.run_all () in
-     return ret
-;;
+let run_program stmts = value_of_rtv @@ Cont.run_identity @@ eval_program [] stmts
 
 let%test _ =
   let stmts =
@@ -209,6 +198,14 @@ let%expect_test _ =
 
 let%expect_test _ =
   let stmts =
+    (*
+     * const x = 100;
+     * const promise = new Promise(() => {
+     *   setTimeout(() => console.log(x), 2000);
+     * });
+     * await promise;
+     * console.log(200);
+     *)
     Nlist.from_list
       [ Def ("x", Value (Num 100))
       ; Def
@@ -217,7 +214,7 @@ let%expect_test _ =
               (Constructor
                  (Value
                     (Fun
-                       ( []
+                       ( [ "resolve" ]
                        , Nlist.from_list
                            [ Expression
                                (Call
@@ -231,6 +228,8 @@ let%expect_test _ =
                                                    (Call
                                                       ( Value (Builtin ConsoleLog)
                                                       , [ Value (Var "x") ] ))
+                                               ; Expression
+                                                   (Call (Value (Var "resolve"), []))
                                                ] ))
                                     ] ))
                            ] )))) )

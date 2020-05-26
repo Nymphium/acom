@@ -7,6 +7,7 @@ module Uuid : sig
   val create : unit -> t
   val equal : t -> t -> bool
   val to_string : t -> string
+  val comparator : (t, Uuid.comparator_witness) Comparator.t
 end = struct
   module M = Uuid
 
@@ -15,6 +16,7 @@ end = struct
   let create = Uuid_unix.create
   let equal = M.equal
   let to_string = M.to_string
+  let comparator = M.comparator
 end
 
 type env = (variable * runtime_value) list
@@ -26,6 +28,7 @@ and runtime_value =
   | RBuiltin of builtin
   | RPromise of Uuid.t
   | Closure of env * variable list * stmts
+  | NativeFun of (runtime_value list -> runtime_value)
 
 exception NotConvertible
 exception NotCoercible
@@ -57,8 +60,9 @@ let value_of_rtv = function
   | RBuiltin b -> Builtin b
   | Closure (_, xs, stmts) -> Fun (xs, stmts)
   | RPromise _ -> failwith "cannot covert to value"
+  | _ -> failwith "naitive function cannot be converted to value"
 ;;
 
 type thread_status =
-  | Pending of (unit -> thread_status)
+  | Pending of (runtime_value list, runtime_value) Cont.t
   | Done of runtime_value

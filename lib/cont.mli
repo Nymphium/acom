@@ -1,4 +1,4 @@
-type ('a, 'b) t
+type ('hole, 'ans) t
 
 val ( >>= ) : ('a, 'ans) t -> ('a -> ('b, 'ans) t) -> ('b, 'ans) t
 val ( let* ) : ('a, 'ans) t -> ('a -> ('b, 'ans) t) -> ('b, 'ans) t
